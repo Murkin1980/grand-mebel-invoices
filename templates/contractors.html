@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}Контрагенты — ГРАНД МЕБЕЛЬ{% endblock %}
+{% block page_title %}Контрагенты{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:380px 1fr;gap:20px;align-items:start">
+
+    <!-- Форма добавления -->
+    <div class="card">
+        <div class="card-header"><h3>Добавить контрагента</h3></div>
+        <div class="card-body">
+            <form action="{{ url_for('add_contractor') }}" method="POST">
+                <div class="form-group">
+                    <label>Наименование *</label>
+                    <input type="text" name="name" class="form-control" placeholder='ТОО "Компания" / ИП Иванов' required>
+                </div>
+                <div class="form-group">
+                    <label>БИН / ИИН *</label>
+                    <input type="text" name="bin_iin" class="form-control" placeholder="123456789012" required>
+                </div>
+                <div class="form-group">
+                    <label>Адрес</label>
+                    <input type="text" name="address" class="form-control" placeholder="г. Алматы, ул. …">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%">+ Добавить</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Список -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Список ({{ contractors | length }})</h3>
+            <form method="get">
+                <div class="search-wrap">
+                    <span class="search-icon">🔍</span>
+                    <input class="form-control" name="search" placeholder="Поиск…" value="{{ search }}" style="width:200px">
+                </div>
+            </form>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Наименование</th>
+                        <th>БИН / ИИН</th>
+                        <th>Адрес</th>
+                        <th>Счетов</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in contractors %}
+                    <tr>
+                        <td style="font-weight:500">{{ c.name }}</td>
+                        <td style="font-family:monospace;color:#64748b">{{ c.bin_iin }}</td>
+                        <td style="color:#64748b;font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ c.address }}">{{ c.address }}</td>
+                        <td style="text-align:center">
+                            <span class="badge badge-blue">{{ c.invoices | length }}</span>
+                        </td>
+                        <td>
+                            <div style="display:flex;gap:4px">
+                                <a href="{{ url_for('edit_contractor', id=c.id) }}" class="btn btn-outline btn-sm">✏️</a>
+                                <a href="{{ url_for('delete_contractor', id=c.id) }}" class="btn btn-danger btn-sm"
+                                   onclick="return confirm('Удалить «{{ c.name }}»?')">🗑</a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" style="text-align:center;padding:30px;color:#94a3b8">
+                        {% if search %}Ничего не найдено{% else %}Контрагентов нет{% endif %}
+                    </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}Редактировать контрагента{% endblock %}
+{% block page_title %}Редактировать контрагента{% endblock %}
+
+{% block content %}
+<div style="max-width:480px">
+    <div class="card">
+        <div class="card-header"><h3>{{ contractor.name }}</h3></div>
+        <div class="card-body">
+            <form action="{{ url_for('edit_contractor', id=contractor.id) }}" method="POST">
+                <div class="form-group">
+                    <label>Наименование *</label>
+                    <input type="text" name="name" class="form-control" value="{{ contractor.name }}" required>
+                </div>
+                <div class="form-group">
+                    <label>БИН / ИИН *</label>
+                    <input type="text" name="bin_iin" class="form-control" value="{{ contractor.bin_iin }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Адрес</label>
+                    <input type="text" name="address" class="form-control" value="{{ contractor.address }}">
+                </div>
+                <div style="display:flex;gap:10px;margin-top:8px">
+                    <button type="submit" class="btn btn-primary">💾 Сохранить</button>
+                    <a href="{{ url_for('contractors') }}" class="btn btn-outline">Отмена</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

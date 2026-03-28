@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block title %}Счета — ИП ГРАНД МЕБЕЛЬ{% endblock %}
+{% block page_title %}Счета на оплату{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('new_invoice') }}" class="btn btn-primary btn-sm">+ Новый счёт</a>
+{% endblock %}
+
+{% block content %}
+<div class="stats">
+    <div class="stat-card">
+        <div class="stat-label">Всего счетов</div>
+        <div class="stat-value" style="color:#2563eb">{{ invoices | length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Сумма всего</div>
+        <div class="stat-value" style="color:#16a34a;font-size:16px" id="stat-total">—</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Контрагентов</div>
+        <div class="stat-value" id="stat-clients">—</div>
+    </div>
+</div>
+<script>
+(function(){
+    const rows = document.querySelectorAll('tbody tr[data-total]');
+    let total = 0, clients = new Set();
+    rows.forEach(r => { total += parseFloat(r.dataset.total||0); clients.add(r.dataset.client||''); });
+    document.getElementById('stat-total').textContent = total.toLocaleString('ru', {maximumFractionDigits:0}) + ' ₸';
+    document.getElementById('stat-clients').textContent = clients.size;
+})();
+</script>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Список счетов</h3>
+        <form method="get" action="{{ url_for('index') }}" style="display:flex;gap:8px;align-items:center;">
+            <div class="search-wrap">
+                <span class="search-icon">🔍</span>
+                <input class="form-control" name="search" placeholder="Поиск по контрагенту, №…" value="{{ search }}" style="width:220px;">
+            </div>
+            {% if search %}
+            <a href="{{ url_for('index') }}" class="btn btn-outline btn-sm">✕ Сбросить</a>
+            {% endif %}
+        </form>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>№</th>
+                    <th>Дата</th>
+                    <th>Покупатель</th>
+                    <th>Позиций</th>
+                    <th>Сумма</th>
+                    <th>Договор</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for invoice in invoices %}
+                <tr data-total="{{ invoice.total() | int }}" data-client="{{ invoice.contractor.name }}">
+                    <td><span class="badge badge-blue">№ {{ invoice.number }}</span></td>
+                    <td style="white-space:nowrap;color:#64748b">{{ invoice.date.strftime('%d.%m.%Y') }}</td>
+                    <td style="font-weight:500">{{ invoice.contractor.name }}</td>
+                    <td style="text-align:center">{{ invoice.items | length }}</td>
+                    <td style="font-weight:600;white-space:nowrap">{{ "{:,.0f}".format(invoice.total()) | replace(',', ' ') }} ₸</td>
+                    <td style="color:#64748b;font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ invoice.contract_info }}</td>
+                    <td>
+                        <div style="display:flex;gap:4px;flex-wrap:wrap">
+                            <a href="{{ url_for('view_invoice', id=invoice.id) }}" class="btn btn-outline btn-sm btn-icon" title="Просмотр">👁</a>
+                            <a href="{{ url_for('edit_invoice', id=invoice.id) }}" class="btn btn-outline btn-sm btn-icon" title="Редактировать">✏️</a>
+                            <a href="{{ url_for('export_invoice', id=invoice.id) }}" class="btn btn-success btn-sm btn-icon" title="Скачать Excel">📥</a>
+                            <a href="{{ url_for('export_esf_xml', id=invoice.id) }}" class="btn btn-purple btn-sm btn-icon" title="XML ЭСФ">📄</a>
+                            <a href="{{ url_for('delete_invoice', id=invoice.id) }}"
+                               class="btn btn-danger btn-sm btn-icon" title="Удалить"
+                               onclick="return confirm('Удалить счёт №{{ invoice.number }}?')">🗑</a>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" style="text-align:center;padding:40px;color:#94a3b8">
+                        {% if search %}Ничего не найдено по «{{ search }}»{% else %}Счетов пока нет. <a href="{{ url_for('new_invoice') }}" style="color:#2563eb">Создайте первый!</a>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

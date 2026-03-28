@@ -1,0 +1,215 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} — ГРАНД МЕБЕЛЬ{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div style="max-width:900px">
+<form action="{{ form_action }}" method="POST" id="invoice-form">
+    <!-- Основные данные -->
+    <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><h3>Основная информация</h3></div>
+        <div class="card-body">
+            <div class="grid-2">
+                <div class="form-group">
+                    <label>Покупатель *</label>
+                    <select name="contractor_id" class="form-control" required>
+                        <option value="">— Выберите контрагента —</option>
+                        {% for c in contractors %}
+                        <option value="{{ c.id }}" {% if invoice and invoice.contractor_id == c.id %}selected{% endif %}>
+                            {{ c.name }} ({{ c.bin_iin }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Дата счёта *</label>
+                    <input type="date" name="date" class="form-control" required
+                           value="{{ invoice.date.isoformat() if invoice else today }}">
+                </div>
+                <div class="form-group col-span-2">
+                    <label>Договор / Основание</label>
+                    <input type="text" name="contract_info" class="form-control"
+                           placeholder="Без договора"
+                           value="{{ invoice.contract_info if invoice else '' }}">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Позиции -->
+    <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+            <h3>Товары / услуги</h3>
+            <button type="button" class="btn btn-outline btn-sm" onclick="addRow()">+ Добавить строку</button>
+        </div>
+        <div class="card-body" style="padding:0;overflow-x:auto">
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th style="width:38%">Наименование</th>
+                        <th style="width:12%">Кол-во</th>
+                        <th style="width:9%">Ед.</th>
+                        <th style="width:18%">Цена, ₸</th>
+                        <th style="width:18%">Сумма, ₸</th>
+                        <th style="width:5%"></th>
+                    </tr>
+                </thead>
+                <tbody id="items-body">
+                    {% if invoice and invoice.items %}
+                        {% for item in invoice.items %}
+                        <tr class="item-row">
+                            <td>
+                                <select name="product_id" class="product-select" onchange="updateRow(this)">
+                                    <option value="">— Выберите —</option>
+                                    {% for p in products %}
+                                    <option value="{{ p.id }}" data-price="{{ p.default_price }}" data-unit="{{ p.unit }}"
+                                        {% if item.product_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                                    {% endfor %}
+                                    <option value="__custom__">+ Другой (вручную)</option>
+                                </select>
+                                <input type="text" name="custom_product_name" class="custom-name"
+                                       placeholder="Название товара"
+                                       style="display:none;margin-top:4px;width:100%">
+                            </td>
+                            <td><input type="number" name="quantity" class="qty-input" value="{{ item.quantity }}" min="0.001" step="0.001" oninput="updateTotal(this)"></td>
+                            <td><input type="text" name="unit_display" class="unit-display" value="{{ item.product.unit }}" disabled style="background:#f8fafc;color:#64748b;font-size:12px"></td>
+                            <td><input type="number" name="price" class="price-input" value="{{ item.price }}" min="0" step="0.01" oninput="updateTotal(this)"></td>
+                            <td><input type="text" class="row-total" value="{{ "{:,.0f}".format(item.quantity * item.price) | replace(',', ' ') }}" disabled style="background:#f0f7ff;color:#2563eb;font-weight:600;font-size:13px"></td>
+                            <td><button type="button" onclick="removeRow(this)" style="background:#fef2f2;border:none;padding:5px 8px;border-radius:5px;cursor:pointer;color:#dc2626">✕</button></td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                    <tr class="item-row">
+                        <td>
+                            <select name="product_id" class="product-select" onchange="updateRow(this)">
+                                <option value="">— Выберите товар —</option>
+                                {% for p in products %}
+                                <option value="{{ p.id }}" data-price="{{ p.default_price }}" data-unit="{{ p.unit }}">{{ p.name }}</option>
+                                {% endfor %}
+                                <option value="__custom__">+ Другой (ввести вручную)</option>
+                            </select>
+                            <input type="text" name="custom_product_name" class="custom-name" placeholder="Название товара" style="display:none;margin-top:4px;width:100%">
+                        </td>
+                        <td><input type="number" name="quantity" class="qty-input" value="1" min="0.001" step="0.001" oninput="updateTotal(this)"></td>
+                        <td><input type="text" name="unit_display" class="unit-display" value="" disabled style="background:#f8fafc;color:#64748b;font-size:12px"></td>
+                        <td><input type="number" name="price" class="price-input" value="" min="0" step="0.01" oninput="updateTotal(this)"></td>
+                        <td><input type="text" class="row-total" value="" disabled style="background:#f0f7ff;color:#2563eb;font-weight:600;font-size:13px"></td>
+                        <td><button type="button" onclick="removeRow(this)" style="background:#fef2f2;border:none;padding:5px 8px;border-radius:5px;cursor:pointer;color:#dc2626">✕</button></td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+        <!-- Total bar -->
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:16px;padding:14px 20px;border-top:2px solid #e2e8f0;background:#f8fafc;border-radius:0 0 10px 10px">
+            <span style="font-size:13px;color:#64748b;font-weight:600">ИТОГО:</span>
+            <span class="total-display" id="grand-total">0 ₸</span>
+        </div>
+    </div>
+
+    <!-- Submit -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button type="submit" class="btn btn-primary" style="font-size:15px;padding:11px 28px">
+            {% if invoice %}💾 Сохранить изменения{% else %}✅ Создать счёт{% endif %}
+        </button>
+        <a href="{{ url_for('index') }}" class="btn btn-outline">Отмена</a>
+    </div>
+</form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const products = {{ products_json | tojson }};
+
+function getProductOptions() {
+    let opts = '<option value="">— Выберите товар —</option>';
+    products.forEach(p => {
+        opts += `<option value="${p.id}" data-price="${p.default_price}" data-unit="${p.unit}">${p.name} (${p.default_price.toLocaleString('ru')} ₸)</option>`;
+    });
+    opts += '<option value="__custom__">+ Другой (ввести вручную)</option>';
+    return opts;
+}
+
+function addRow() {
+    const row = document.createElement('tr');
+    row.className = 'item-row';
+    row.innerHTML = `
+        <td>
+            <select name="product_id" class="product-select" onchange="updateRow(this)">
+                ${getProductOptions()}
+            </select>
+            <input type="text" name="custom_product_name" class="custom-name" placeholder="Название товара" style="display:none;margin-top:4px;width:100%">
+        </td>
+        <td><input type="number" name="quantity" class="qty-input" value="1" min="0.001" step="0.001" oninput="updateTotal(this)"></td>
+        <td><input type="text" name="unit_display" class="unit-display" value="" disabled style="background:#f8fafc;color:#64748b;font-size:12px"></td>
+        <td><input type="number" name="price" class="price-input" value="" min="0" step="0.01" oninput="updateTotal(this)"></td>
+        <td><input type="text" class="row-total" value="" disabled style="background:#f0f7ff;color:#2563eb;font-weight:600;font-size:13px"></td>
+        <td><button type="button" onclick="removeRow(this)" style="background:#fef2f2;border:none;padding:5px 8px;border-radius:5px;cursor:pointer;color:#dc2626">✕</button></td>
+    `;
+    document.getElementById('items-body').appendChild(row);
+    recalcTotal();
+}
+
+function removeRow(btn) {
+    const rows = document.querySelectorAll('.item-row');
+    if (rows.length > 1) {
+        btn.closest('tr').remove();
+        recalcTotal();
+    }
+}
+
+function updateRow(select) {
+    const row = select.closest('tr');
+    const custom = row.querySelector('.custom-name');
+    const priceInput = row.querySelector('.price-input');
+    const unitInput = row.querySelector('.unit-display');
+
+    if (select.value === '__custom__') {
+        custom.style.display = 'block';
+        custom.required = true;
+        unitInput.value = 'шт';
+    } else {
+        custom.style.display = 'none';
+        custom.required = false;
+        const opt = select.options[select.selectedIndex];
+        if (opt.dataset.price) priceInput.value = opt.dataset.price;
+        if (opt.dataset.unit) unitInput.value = opt.dataset.unit;
+        updateTotal(priceInput);
+    }
+}
+
+function updateTotal(input) {
+    const row = input.closest('tr');
+    const qty = parseFloat(row.querySelector('.qty-input').value) || 0;
+    const price = parseFloat(row.querySelector('.price-input').value) || 0;
+    const rowTotal = row.querySelector('.row-total');
+    const sum = qty * price;
+    rowTotal.value = sum > 0 ? sum.toLocaleString('ru', {maximumFractionDigits: 2}) + ' ₸' : '';
+    recalcTotal();
+}
+
+function recalcTotal() {
+    let grand = 0;
+    document.querySelectorAll('.item-row').forEach(row => {
+        const qty = parseFloat(row.querySelector('.qty-input').value) || 0;
+        const price = parseFloat(row.querySelector('.price-input').value) || 0;
+        grand += qty * price;
+    });
+    document.getElementById('grand-total').textContent =
+        grand > 0 ? grand.toLocaleString('ru', {maximumFractionDigits: 2}) + ' ₸' : '0 ₸';
+}
+
+// Init totals on load
+document.querySelectorAll('.item-row').forEach(row => {
+    const qty = parseFloat(row.querySelector('.qty-input')?.value) || 0;
+    const price = parseFloat(row.querySelector('.price-input')?.value) || 0;
+    const rowTotal = row.querySelector('.row-total');
+    if (rowTotal && qty && price) {
+        const sum = qty * price;
+        rowTotal.value = sum.toLocaleString('ru', {maximumFractionDigits: 2}) + ' ₸';
+    }
+});
+recalcTotal();
+</script>
+{% endblock %}
