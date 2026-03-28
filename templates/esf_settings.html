@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}Настройки ЭСФ — ГРАНД МЕБЕЛЬ{% endblock %}
+{% block page_title %}Настройки ЭСФ{% endblock %}
+
+{% block content %}
+<div style="max-width:640px">
+    <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><h3>⚙️ Параметры ИС ЭСФ</h3></div>
+        <div class="card-body">
+            <form action="{{ url_for('esf_settings') }}" method="POST">
+                <div class="form-group">
+                    <label>БИН отправителя</label>
+                    <input type="text" name="sender_bin" class="form-control" value="{{ sender_bin }}" placeholder="910226302322">
+                </div>
+                <div class="form-group">
+                    <label>Путь к файлу ЭЦП (.p12)</label>
+                    <input type="text" name="cert_path" class="form-control" value="{{ cert_path }}"
+                           placeholder="C:\Users\...\GOST512_xxx.p12">
+                    <small style="color:#64748b;font-size:12px;margin-top:4px;display:block">
+                        Файл находится в папке приложения: <code>Aa123456/GOST512_....p12</code>
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label>Пароль к ЭЦП</label>
+                    <input type="password" name="cert_password" class="form-control" value="Aa123456">
+                </div>
+                <button type="submit" class="btn btn-primary">💾 Сохранить</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h3>📋 Инструкция по отправке ЭСФ</h3></div>
+        <div class="card-body">
+            <ol style="padding-left:18px;line-height:2;color:#374151;font-size:13.5px">
+                <li>Укажите путь к файлу ЭЦП (.p12) и пароль выше</li>
+                <li>Откройте нужный счёт → нажмите <strong>«XML ЭСФ»</strong> — скачается файл</li>
+                <li>Для реальной отправки нажмите <strong>«Отправить ЭСФ»</strong> на странице счёта</li>
+                <li>Без ЭЦП приложение работает в <strong>тестовом режиме</strong></li>
+            </ol>
+            <div style="margin-top:14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;font-size:12.5px;color:#92400e">
+                ⚠️ Серверы ИС ЭСФ:<br>
+                Продуктивный: <code>https://esf.gov.kz:8443</code><br>
+                Тестовый: <code>https://test3.esf.kgd.gov.kz:8443</code>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

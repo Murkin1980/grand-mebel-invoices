@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% block title %}Счёт №{{ invoice.number }} — ГРАНД МЕБЕЛЬ{% endblock %}
+{% block page_title %}Счёт №{{ invoice.number }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('edit_invoice', id=invoice.id) }}" class="btn btn-outline btn-sm">✏️ Редактировать</a>
+<a href="{{ url_for('export_invoice', id=invoice.id) }}" class="btn btn-success btn-sm">📥 Excel</a>
+<a href="{{ url_for('export_esf_xml', id=invoice.id) }}" class="btn btn-purple btn-sm">📄 XML ЭСФ</a>
+<a href="{{ url_for('send_to_esf', id=invoice.id) }}" class="btn btn-warning btn-sm" onclick="return confirm('Отправить ЭСФ?')">📤 Отправить ЭСФ</a>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:800px">
+    <!-- Шапка счёта -->
+    <div class="card" style="margin-bottom:16px">
+        <div class="card-body">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:16px">
+                <div>
+                    <div style="font-size:22px;font-weight:700;color:#1e293b">СЧЁТ НА ОПЛАТУ</div>
+                    <div style="color:#64748b;margin-top:4px">№ {{ invoice.number }} от {{ invoice.date.strftime('%d.%m.%Y') }}</div>
+                </div>
+                <div style="text-align:right">
+                    <div style="font-size:24px;font-weight:800;color:#2563eb">{{ "{:,.0f}".format(invoice.total()) | replace(',', ' ') }} ₸</div>
+                    <div style="color:#64748b;font-size:12px;margin-top:2px">Без НДС</div>
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div style="background:#f8fafc;border-radius:8px;padding:12px">
+                    <div style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:6px">Поставщик</div>
+                    <div style="font-weight:600">ИП "ГРАНД МЕБЕЛЬ"</div>
+                    <div style="color:#64748b;font-size:12.5px;margin-top:2px">ИИН: 910226302322</div>
+                    <div style="color:#64748b;font-size:12px;margin-top:1px">ИИК: KZ84722S000035000586</div>
+                    <div style="color:#64748b;font-size:12px;margin-top:1px">Kaspi Bank | CASPKZKA</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:8px;padding:12px">
+                    <div style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:6px">Покупатель</div>
+                    <div style="font-weight:600">{{ invoice.contractor.name }}</div>
+                    <div style="color:#64748b;font-size:12.5px;margin-top:2px">{{ invoice.contractor.bin_iin }}</div>
+                    <div style="color:#64748b;font-size:12px;margin-top:1px">{{ invoice.contractor.address }}</div>
+                </div>
+            </div>
+
+            {% if invoice.contract_info and invoice.contract_info != 'Без договора' %}
+            <div style="margin-top:10px;background:#fffbeb;border-radius:8px;padding:10px 12px;font-size:13px;color:#92400e">
+                📜 Договор: {{ invoice.contract_info }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Позиции -->
+    <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+            <h3>Позиции ({{ invoice.items | length }})</h3>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:40px">№</th>
+                        <th>Наименование</th>
+                        <th style="width:70px;text-align:center">Кол-во</th>
+                        <th style="width:70px;text-align:center">Ед.</th>
+                        <th style="width:120px;text-align:right">Цена</th>
+                        <th style="width:130px;text-align:right">Сумма</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in invoice.items %}
+                    <tr>
+                        <td style="text-align:center;color:#94a3b8">{{ loop.index }}</td>
+                        <td>{{ item.product.name }}</td>
+                        <td style="text-align:center">{{ item.quantity | int if item.quantity == (item.quantity | int) else item.quantity }}</td>
+                        <td style="text-align:center;color:#64748b">{{ item.product.unit }}</td>
+                        <td style="text-align:right">{{ "{:,.0f}".format(item.price) | replace(',', ' ') }} ₸</td>
+                        <td style="text-align:right;font-weight:600">{{ "{:,.0f}".format(item.quantity * item.price) | replace(',', ' ') }} ₸</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr style="background:#f0f7ff">
+                        <td colspan="5" style="text-align:right;font-weight:700;font-size:15px;padding:12px 14px">ИТОГО:</td>
+                        <td style="text-align:right;font-weight:800;font-size:17px;color:#2563eb;padding:12px 14px">{{ "{:,.0f}".format(invoice.total()) | replace(',', ' ') }} ₸</td>
+                    </tr>
+                    <tr>
+                        <td colspan="6" style="padding:8px 14px;font-size:12.5px;color:#64748b;font-style:italic">
+                            Всего к оплате: {{ invoice.total_text().title() }} тенге 00 тиын. Без НДС.
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <a href="{{ url_for('index') }}" class="btn btn-outline">← Все счета</a>
+        <a href="{{ url_for('edit_invoice', id=invoice.id) }}" class="btn btn-primary">✏️ Редактировать</a>
+        <a href="{{ url_for('export_invoice', id=invoice.id) }}" class="btn btn-success">📥 Скачать Excel</a>
+        <a href="{{ url_for('export_esf_xml', id=invoice.id) }}" class="btn btn-purple">📄 XML для ЭСФ</a>
+        <a href="{{ url_for('delete_invoice', id=invoice.id) }}" class="btn btn-danger"
+           onclick="return confirm('Удалить счёт №{{ invoice.number }}?')">🗑 Удалить</a>
+    </div>
+</div>
+{% endblock %}

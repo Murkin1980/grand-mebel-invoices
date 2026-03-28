@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Товары — ГРАНД МЕБЕЛЬ{% endblock %}
+{% block page_title %}Товары и услуги{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:360px 1fr;gap:20px;align-items:start">
+
+    <!-- Форма добавления -->
+    <div class="card">
+        <div class="card-header"><h3>Добавить товар / услугу</h3></div>
+        <div class="card-body">
+            <form action="{{ url_for('add_product') }}" method="POST">
+                <div class="form-group">
+                    <label>Наименование *</label>
+                    <input type="text" name="name" class="form-control" placeholder="Шкаф, Стол, Распил…" required>
+                </div>
+                <div class="form-group">
+                    <label>Единица измерения</label>
+                    <select name="unit" class="form-control">
+                        <option value="Штука">Штука</option>
+                        <option value="Услуга">Услуга</option>
+                        <option value="м²">м²</option>
+                        <option value="м">м (пог.)</option>
+                        <option value="компл.">компл.</option>
+                        <option value="кг">кг</option>
+                        <option value="л">л</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Цена по умолчанию (₸)</label>
+                    <input type="number" name="default_price" class="form-control" placeholder="0" min="0" step="0.01">
+                </div>
+                <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-bottom:0">
+                    <input type="checkbox" name="is_service" id="is_service" style="width:16px;height:16px">
+                    <label for="is_service" style="text-transform:none;font-size:13px;color:#64748b;margin:0">Это услуга</label>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%;margin-top:16px">+ Добавить</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Список -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Каталог ({{ products | length }})</h3>
+            <form method="get">
+                <div class="search-wrap">
+                    <span class="search-icon">🔍</span>
+                    <input class="form-control" name="search" placeholder="Поиск…" value="{{ search }}" style="width:200px">
+                </div>
+            </form>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Наименование</th>
+                        <th>Тип</th>
+                        <th>Ед.</th>
+                        <th style="text-align:right">Цена</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in products %}
+                    <tr>
+                        <td style="font-weight:500">{{ p.name }}</td>
+                        <td>
+                            {% if p.is_service %}
+                                <span class="badge badge-orange">Услуга</span>
+                            {% else %}
+                                <span class="badge badge-gray">Товар</span>
+                            {% endif %}
+                        </td>
+                        <td style="color:#64748b">{{ p.unit }}</td>
+                        <td style="text-align:right;font-weight:600">{{ "{:,.0f}".format(p.default_price) | replace(',', ' ') }} ₸</td>
+                        <td>
+                            <div style="display:flex;gap:4px">
+                                <a href="{{ url_for('edit_product', id=p.id) }}" class="btn btn-outline btn-sm">✏️</a>
+                                <a href="{{ url_for('delete_product', id=p.id) }}" class="btn btn-danger btn-sm"
+                                   onclick="return confirm('Удалить «{{ p.name }}»?')">🗑</a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" style="text-align:center;padding:30px;color:#94a3b8">
+                        {% if search %}Ничего не найдено{% else %}Нет товаров{% endif %}
+                    </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

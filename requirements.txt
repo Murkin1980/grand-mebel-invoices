@@ -1,0 +1,12 @@
+Flask==3.0.0
+flask_sqlalchemy==3.1.1
+openpyxl==3.1.2
+python-dateutil==2.8.2
+lxml==5.1.0
+requests==2.31.0
+pyOpenSSL==24.0.0
+cryptography==41.0.7
+pycryptodome==3.19.0
+zeep==4.2.1
+gunicorn==21.2.0
+psycopg2-binary==2.9.9
