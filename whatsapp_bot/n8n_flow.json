@@ -1,0 +1,200 @@
+{
+  "name": "ГРАНД МЕБЕЛЬ — WhatsApp Bot",
+  "nodes": [
+
+    {
+      "id": "1",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [240, 300],
+      "parameters": {
+        "path": "whatsapp-grand-mebel",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      },
+      "notes": "Сюда приходят сообщения от WhatsApp Cloud API. URL вставить в Meta Developers → Webhooks."
+    },
+
+    {
+      "id": "2",
+      "name": "Извлечь сообщение",
+      "type": "n8n-nodes-base.code",
+      "position": [460, 300],
+      "parameters": {
+        "language": "javascript",
+        "jsCode": "// Извлекаем данные из WhatsApp Cloud API payload\nconst body = $input.first().json;\n\nlet phone = '';\nlet message = '';\nlet messageId = '';\n\ntry {\n  const entry = body.entry[0];\n  const change = entry.changes[0];\n  const value = change.value;\n  \n  const msg = value.messages?.[0];\n  phone = value.contacts?.[0]?.wa_id || '';\n  message = msg?.text?.body || msg?.interactive?.button_reply?.title || '';\n  messageId = msg?.id || '';\n} catch(e) {\n  // Не WhatsApp формат — возможно тест\n  phone = body.from || 'test';\n  message = body.message || body.text || '';\n  messageId = 'test-' + Date.now();\n}\n\nreturn [{ json: { phone, message, messageId } }];"
+      }
+    },
+
+    {
+      "id": "3",
+      "name": "Получить сессию",
+      "type": "n8n-nodes-base.redis",
+      "position": [680, 300],
+      "parameters": {
+        "operation": "get",
+        "key": "=session:{{ $json.phone }}"
+      },
+      "notes": "Redis хранит состояние диалога каждого клиента. Если Redis нет — замените на n8n-nodes-base.set и храните в памяти."
+    },
+
+    {
+      "id": "4",
+      "name": "Парсить сессию",
+      "type": "n8n-nodes-base.code",
+      "position": [900, 300],
+      "parameters": {
+        "language": "javascript",
+        "jsCode": "const sessionRaw = $input.first().json.value || '{}';\nlet session = {};\ntry { session = JSON.parse(sessionRaw); } catch(e) {}\n\nconst prev = $('Извлечь сообщение').first().json;\n\nreturn [{ json: { \n  phone: prev.phone,\n  message: prev.message,\n  messageId: prev.messageId,\n  session \n}}];"
+      }
+    },
+
+    {
+      "id": "5",
+      "name": "Flask — обработать сообщение",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1120, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-RENDER-APP.onrender.com/api/bot/webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"from\": \"{{ $json.phone }}\", \"message\": \"{{ $json.message }}\", \"session\": {{ JSON.stringify($json.session) }} }",
+        "options": { "timeout": 10000 }
+      },
+      "notes": "Замените YOUR-RENDER-APP на ваш реальный домен на Render. Локально: http://localhost:5000"
+    },
+
+    {
+      "id": "6",
+      "name": "Сохранить сессию",
+      "type": "n8n-nodes-base.redis",
+      "position": [1340, 200],
+      "parameters": {
+        "operation": "set",
+        "key": "=session:{{ $('Парсить сессию').first().json.phone }}",
+        "value": "={{ JSON.stringify($json.session) }}",
+        "keyType": "automatic",
+        "expire": true,
+        "ttl": 3600
+      },
+      "notes": "Сессия живёт 1 час (3600 сек). Потом диалог начинается заново."
+    },
+
+    {
+      "id": "7",
+      "name": "Проверить action",
+      "type": "n8n-nodes-base.switch",
+      "position": [1340, 380],
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.action }}",
+        "rules": {
+          "rules": [
+            { "value2": "save_lead", "outputKey": "lead" },
+            { "value2": "notify_manager", "outputKey": "notify" },
+            { "value2": "show_price", "outputKey": "price" }
+          ]
+        },
+        "fallbackOutput": "none"
+      }
+    },
+
+    {
+      "id": "8",
+      "name": "Сохранить лид",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1560, 240],
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-RENDER-APP.onrender.com/api/bot/lead",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.data) }}"
+      }
+    },
+
+    {
+      "id": "9",
+      "name": "Уведомить менеджера",
+      "type": "n8n-nodes-base.telegram",
+      "position": [1560, 400],
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=🔔 Новый клиент из WhatsApp!\n📱 {{ $json.data.phone }}\n💬 Написал: {{ $json.data.message }}",
+        "additionalFields": {}
+      },
+      "notes": "Укажите ваш Telegram chat_id. Бот уведомит вас о новом лиде."
+    },
+
+    {
+      "id": "10",
+      "name": "Отправить ответ WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1560, 560],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.WHATSAPP_TOKEN }}" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $('Парсить сессию').first().json.phone }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $('Flask — обработать сообщение').first().json.reply.replace(/\"/g, '\\\\\"') }}\" }\n}"
+      },
+      "notes": "Отправляет ответ клиенту. Нужны переменные окружения n8n: WHATSAPP_TOKEN и WHATSAPP_PHONE_NUMBER_ID."
+    },
+
+    {
+      "id": "11",
+      "name": "Ответ Webhook OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [1780, 560],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{ \"ok\": true }"
+      }
+    }
+  ],
+
+  "connections": {
+    "WhatsApp Webhook":            { "main": [[{ "node": "Извлечь сообщение",             "type": "main", "index": 0 }]] },
+    "Извлечь сообщение":           { "main": [[{ "node": "Получить сессию",               "type": "main", "index": 0 }]] },
+    "Получить сессию":             { "main": [[{ "node": "Парсить сессию",                "type": "main", "index": 0 }]] },
+    "Парсить сессию":              { "main": [[{ "node": "Flask — обработать сообщение",  "type": "main", "index": 0 }]] },
+    "Flask — обработать сообщение":{ "main": [[{ "node": "Сохранить сессию",             "type": "main", "index": 0 },
+                                               { "node": "Проверить action",             "type": "main", "index": 0 },
+                                               { "node": "Отправить ответ WhatsApp",     "type": "main", "index": 0 }]] },
+    "Проверить action":            {
+      "main": [
+        [{ "node": "Сохранить лид",        "type": "main", "index": 0 }],
+        [{ "node": "Уведомить менеджера",  "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Отправить ответ WhatsApp":    { "main": [[{ "node": "Ответ Webhook OK",              "type": "main", "index": 0 }]] }
+  },
+
+  "_meta": {
+    "instanceId": "grand-mebel-whatsapp-bot",
+    "notes": [
+      "Перед импортом в n8n:",
+      "1. Замените YOUR-RENDER-APP на ваш домен Render",
+      "2. Замените YOUR_TELEGRAM_CHAT_ID на ID вашего Telegram чата",
+      "3. Добавьте переменные окружения в n8n: WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID",
+      "4. Если нет Redis — удалите узлы 'Получить сессию' и 'Сохранить сессию', сессия будет сбрасываться"
+    ]
+  }
+}

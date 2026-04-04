@@ -722,6 +722,10 @@ def init_db():
         db.session.commit()
 
 
+# ─── WhatsApp Bot Blueprint ───────────────────────────────────────────────
+from whatsapp_bot.bot_api import bot_bp
+app.register_blueprint(bot_bp)
+
 if __name__ == '__main__':
     init_db()
     app.run(debug=True, port=5000)
