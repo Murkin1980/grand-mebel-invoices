@@ -10,3 +10,4 @@ pycryptodome==3.19.0
 zeep==4.2.1
 gunicorn==21.2.0
 psycopg2-binary==2.9.9
+Pillow==10.2.0

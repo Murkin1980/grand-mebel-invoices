@@ -1,13 +1,30 @@
 {% extends 'base.html' %}
-{% block title %}Настройки ЭСФ — ГРАНД МЕБЕЛЬ{% endblock %}
-{% block page_title %}Настройки ЭСФ{% endblock %}
+{% block title %}Настройки — ГРАНД МЕБЕЛЬ{% endblock %}
+{% block page_title %}Настройки{% endblock %}
 
 {% block content %}
 <div style="max-width:640px">
     <div class="card" style="margin-bottom:16px">
-        <div class="card-header"><h3>⚙️ Параметры ИС ЭСФ</h3></div>
+        <div class="card-header"><h3>⚙️ Настройки и ЭСФ</h3></div>
         <div class="card-body">
-            <form action="{{ url_for('esf_settings') }}" method="POST">
+            <form action="{{ url_for('esf_settings') }}" method="POST" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label>Печать для счетов (только PNG)</label>
+                    <input type="file" name="stamp_file" class="form-control" accept=".png">
+                    {% if has_stamp %}
+                    <small style="color:var(--success);font-size:12px;margin-top:4px;display:block">✓ Файл печати сохранен</small>
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    <label>Подпись для счетов (только PNG)</label>
+                    <input type="file" name="signature_file" class="form-control" accept=".png">
+                    {% if has_signature %}
+                    <small style="color:var(--success);font-size:12px;margin-top:4px;display:block">✓ Файл подписи сохранен</small>
+                    {% endif %}
+                </div>
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid var(--border);">
+                
+                <h4 style="margin-bottom: 12px; color: var(--text);">Параметры ИС ЭСФ</h4>
                 <div class="form-group">
                     <label>БИН отправителя</label>
                     <input type="text" name="sender_bin" class="form-control" value="{{ sender_bin }}" placeholder="910226302322">

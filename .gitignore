@@ -12,6 +12,7 @@ build/
 
 # Flask / SQLite
 instance/*.db
+instance/*.png
 instance/*.db-journal
 *.db
 *.db-journal

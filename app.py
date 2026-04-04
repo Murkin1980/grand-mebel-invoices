@@ -8,6 +8,7 @@ from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as OpenpyxlImage
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'invoice-app-secret-key-2026')
@@ -595,6 +596,26 @@ def export_invoice(id):
     ws[f'E{row}'].font = Font(size=8, italic=True)
     ws[f'E{row}'].alignment = Alignment(horizontal='center')
 
+    # Вставка печати и подписи
+    instance_dir = os.path.join(app.root_path, 'instance')
+    stamp_path = os.path.join(instance_dir, 'stamp.png')
+    signature_path = os.path.join(instance_dir, 'signature.png')
+
+    try:
+        if os.path.exists(signature_path):
+            img_sig = OpenpyxlImage(signature_path)
+            img_sig.width = 150
+            img_sig.height = 75
+            ws.add_image(img_sig, f'B{row-2}')
+
+        if os.path.exists(stamp_path):
+            img_stamp = OpenpyxlImage(stamp_path)
+            img_stamp.width = 130
+            img_stamp.height = 130
+            ws.add_image(img_stamp, f'A{row-3}')
+    except Exception as e:
+        print(f"Error adding images: {e}")
+
     ws.column_dimensions['G'].width = 2
 
     output = BytesIO()
@@ -614,15 +635,33 @@ def export_invoice(id):
 
 @app.route('/esf/settings', methods=['GET', 'POST'])
 def esf_settings():
+    instance_dir = os.path.join(app.root_path, 'instance')
+    os.makedirs(instance_dir, exist_ok=True)
+    stamp_path = os.path.join(instance_dir, 'stamp.png')
+    signature_path = os.path.join(instance_dir, 'signature.png')
+
     if request.method == 'POST':
+        stamp_file = request.files.get('stamp_file')
+        if stamp_file and stamp_file.filename.lower().endswith('.png'):
+            stamp_file.save(stamp_path)
+            
+        signature_file = request.files.get('signature_file')
+        if signature_file and signature_file.filename.lower().endswith('.png'):
+            signature_file.save(signature_path)
+            
         app.config['ESF_CERT_PATH'] = request.form.get('cert_path', '')
         app.config['ESF_CERT_PASSWORD'] = request.form.get('cert_password', '')
         app.config['ESF_SENDER_BIN'] = request.form.get('sender_bin', '910226302322')
-        flash('Настройки ЭСФ сохранены', 'success')
+        flash('Настройки сохранены', 'success')
         return redirect(url_for('index'))
+        
+    has_stamp = os.path.exists(stamp_path)
+    has_signature = os.path.exists(signature_path)
     return render_template('esf_settings.html',
                            cert_path=app.config.get('ESF_CERT_PATH', ''),
-                           sender_bin=app.config.get('ESF_SENDER_BIN', '910226302322'))
+                           sender_bin=app.config.get('ESF_SENDER_BIN', '910226302322'),
+                           has_stamp=has_stamp,
+                           has_signature=has_signature)
 
 
 @app.route('/esf/export/<int:id>')
