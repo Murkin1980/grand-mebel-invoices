@@ -5,9 +5,13 @@ from flask import Flask, render_template, request, redirect, url_for, flash, sen
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, date
 from io import BytesIO
+import openpyxl
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
+from copy import copy as shallow_copy
+from werkzeug.security import generate_password_hash, check_password_hash
+from utils import num2text, format_money
 from openpyxl.drawing.image import Image as OpenpyxlImage
 
 app = Flask(__name__)
@@ -387,6 +391,153 @@ def delete_invoice(id):
     return redirect(url_for('index'))
 
 
+@app.route('/invoice/import_excel', methods=['POST'])
+def import_excel():
+    import openpyxl
+    import re
+    files = request.files.getlist('excel_files')
+    if not files or all(f.filename == '' for f in files):
+        flash('Файлы не выбраны', 'warning')
+        return redirect(url_for('index'))
+        
+    imported_count = 0
+    skipped_count = 0
+    errors = []
+    
+    for file in files:
+        if not file.filename.lower().endswith('.xlsx'):
+            continue
+            
+        try:
+            wb = openpyxl.load_workbook(file, data_only=True)
+            ws = wb.active
+            
+            # Парсинг Номера и Даты
+            inv_number = None
+            date_str = None
+            for r in range(1, 15):
+                for c in range(1, 10):
+                    val = str(ws.cell(row=r, column=c).value or '').strip()
+                    if 'Счет на оплату №' in val or 'Счет №' in val:
+                        num_m = re.search(r'№\s*(\d+)', val)
+                        if num_m: inv_number = int(num_m.group(1))
+                        date_m = re.search(r'от\s*([\d.]+)', val)
+                        if date_m: date_str = date_m.group(1)
+                        else:
+                            val_next = str(ws.cell(row=r, column=c+1).value or '').strip()
+                            date_m2 = re.search(r'от\s*([\d.]+)', val_next)
+                            if date_m2: date_str = date_m2.group(1)
+                            
+            if not inv_number:
+                num_m = re.search(r'№\s*(\d+)', file.filename)
+                if num_m: inv_number = int(num_m.group(1))
+                else: continue
+                
+            if not date_str:
+                date_m = re.search(r'от\s*([\d.]+)', file.filename)
+                if date_m: date_str = date_m.group(1)
+                
+            try:
+                inv_date = datetime.strptime(date_str, '%d.%m.%Y').date() if date_str else date.today()
+            except ValueError:
+                inv_date = date.today()
+                
+            if Invoice.query.filter_by(number=inv_number).first():
+                skipped_count += 1
+                continue
+                
+            # Парсинг Покупателя
+            buyer_str = ''
+            for r in range(5, 20):
+                for c in range(1, 10):
+                    val = str(ws.cell(row=r, column=c).value or '').strip()
+                    if 'Покупатель' in val or 'Плательщик' in val:
+                        if len(val) > 15: buyer_str = val.split(':', 1)[1] if ':' in val else val
+                        else: buyer_str = str(ws.cell(row=r, column=c+1).value or '') + str(ws.cell(row=r, column=c+2).value or '')
+                        
+            buyer_str = buyer_str.replace('ИИН', '').replace('БИН', '').replace('Покупатель:', '').strip()
+            bin_iin = '000000000000'
+            name = 'Неизвестный контрагент'
+            address = 'Без адреса'
+            
+            parts = [p.strip() for p in buyer_str.split('|')]
+            if len(parts) <= 1: parts = [p.strip() for p in buyer_str.split(',')]
+            
+            for p in parts:
+                if not p: continue
+                if len(p) in (10, 12, 11) and p.isdigit(): bin_iin = p
+                elif len(p) > 3 and not p.isdigit() and name == 'Неизвестный контрагент': name = p
+                elif len(p) > 5: address = p
+
+            if name == 'Неизвестный контрагент' and buyer_str: name = buyer_str[:200]
+
+            contractor = Contractor.query.filter_by(bin_iin=bin_iin).first()
+            if not contractor:
+                contractor = Contractor(name=name, bin_iin=bin_iin, address=address)
+                db.session.add(contractor)
+                db.session.flush()
+                
+            invoice = Invoice(number=inv_number, date=inv_date, contractor_id=contractor.id, contract_info='Импортировано из Excel')
+            db.session.add(invoice)
+            db.session.flush()
+            
+            # Парсинг Товаров
+            in_table = False
+            col_map = {}
+            for row in ws.iter_rows(min_row=10, max_row=150):
+                if in_table:
+                    val0 = str(row[0].value or '').strip()
+                    if not val0 or 'ИТОГО' in val0.upper() or 'ВСЕГО' in val0.upper() or 'ВСЕГО:' in val0.upper(): break
+                    
+                    p_name = str(row[col_map.get('name', 1)].value or '').strip()
+                    if not p_name: continue
+                    
+                    try: p_qty = float(str(row[col_map.get('qty', 2)].value or 1).replace(' ','').replace(',','.'))
+                    except: p_qty = 1.0
+                    
+                    p_unit = str(row[col_map.get('unit', 3)].value or 'Шт').strip()
+                    
+                    try: p_price = float(str(row[col_map.get('price', 4)].value or 0).replace(' ','').replace(',','.'))
+                    except: p_price = 0.0
+                    
+                    product = Product.query.filter_by(name=p_name).first()
+                    if not product:
+                        product = Product(name=p_name, unit=p_unit, default_price=p_price)
+                        db.session.add(product)
+                        db.session.flush()
+                        
+                    item = InvoiceItem(invoice_id=invoice.id, product_id=product.id, quantity=p_qty, price=p_price)
+                    db.session.add(item)
+                    
+                else:
+                    for i, cell in enumerate(row):
+                        val = str(cell.value or '').strip().lower()
+                        if 'наименование' in val or 'услуга' in val or 'товар' in val: col_map['name'] = i
+                        elif 'кол' in val: col_map['qty'] = i
+                        elif 'ед.' in val or 'изм' in val or 'ед' == val: col_map['unit'] = i
+                        elif 'цена' in val: col_map['price'] = i
+                        
+                    if 'name' in col_map and 'qty' in col_map:
+                        in_table = True
+                        
+            db.session.commit()
+            imported_count += 1
+            
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f"Ошибка в {file.filename}: {str(e)}")
+            
+    if imported_count > 0:
+        flash(f'Успешно импортировано счетов: {imported_count}', 'success')
+    if skipped_count > 0:
+        flash(f'Пропущено (счет с таким номером уже есть): {skipped_count}', 'info')
+    if errors:
+        for err in errors:
+            flash(err, 'danger')
+            
+    return redirect(url_for('index'))
+
+
 # ─── Routes: Export ────────────────────────────────────────────────────────────
 
 @app.route('/invoice/export/<int:id>')
@@ -623,6 +774,119 @@ def export_invoice(id):
     output.seek(0)
 
     filename = f'Счет_№{invoice.number}_от_{date_str}.xlsx'
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
+
+
+@app.route('/invoice/export_waybill/<int:id>')
+def export_waybill(id):
+    invoice = Invoice.query.get_or_404(id)
+    template_path = os.path.join(app.root_path, 'instance', 'template_waybill.xlsx')
+    
+    if not os.path.exists(template_path):
+        flash('Шаблон накладной не найден', 'danger')
+        return redirect(url_for('index'))
+        
+    wb = openpyxl.load_workbook(template_path)
+    ws = wb.active
+    
+    date_str = invoice.date.strftime('%d.%m.%Y')
+    
+    seller_name = app.config.get('ESF_SENDER_NAME', 'ИП "ГРАНД МЕБЕЛЬ"')
+    seller_bin = app.config.get('ESF_SENDER_BIN', '910226302322')
+    seller_full = f"{seller_bin}, {seller_name} Казахстан, Аулиеагаш..."
+    
+    ws['A15'] = f"НАКЛАДНАЯ НА ОТПУСК ЗАПАСОВ НА СТОРОНУ № {invoice.number} от {date_str}"
+    
+    # Row 19 is Seller and Buyer
+    ws['A19'] = seller_full
+    ws['L19'] = f"{invoice.contractor.bin_iin}, {invoice.contractor.name}, {invoice.contractor.address}"
+    
+    start_row = 24
+    current_row = start_row
+    
+    total_qty = 0
+    total_sum = 0
+    
+    def safe_write(r, c, val):
+        try: ws.cell(row=r, column=c).value = val
+        except AttributeError: pass
+
+    if len(invoice.items) > 1:
+        ws.insert_rows(25, len(invoice.items) - 1)
+        
+    for index, item in enumerate(invoice.items):
+        r = current_row + index
+        
+        safe_write(r, 1, index + 1)
+        safe_write(r, 3, item.product.name)
+        safe_write(r, 20, item.product.unit or 'шт')
+        safe_write(r, 23, item.quantity)
+        safe_write(r, 28, item.quantity)
+        safe_write(r, 32, item.price)
+        
+        sum_val = item.quantity * item.price
+        safe_write(r, 38, sum_val)
+        
+        if index > 0:
+            for c in range(1, 40):
+                source_cell = ws.cell(row=start_row, column=c)
+                target_cell = ws.cell(row=r, column=c)
+                if source_cell.has_style:
+                    target_cell._style = shallow_copy(source_cell._style)
+            ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=14)
+                    
+        total_qty += item.quantity
+        total_sum += sum_val
+
+    totals_row = 25 + len(invoice.items) - 1
+    
+    safe_write(totals_row, 4, 'Итого')
+    safe_write(totals_row, 21, 'Итого')
+    safe_write(totals_row, 22, 'Итого')
+    
+    safe_write(totals_row, 23, total_qty)
+    safe_write(totals_row, 28, total_qty)
+    safe_write(totals_row, 38, total_sum)
+    
+    safe_write(totals_row+1, 1, 'Всего отпущено количество запасов (прописью)')
+    
+    try:
+        qty_words = num2text(int(total_qty)).capitalize()
+    except:
+        qty_words = str(total_qty)
+        
+    safe_write(totals_row+1, 14, qty_words)
+    
+    # Вставка печати и подписи
+    instance_dir = os.path.join(app.root_path, 'instance')
+    stamp_path = os.path.join(instance_dir, 'stamp.png')
+    signature_path = os.path.join(instance_dir, 'signature.png')
+
+    try:
+        if os.path.exists(signature_path):
+            img_sig = OpenpyxlImage(signature_path)
+            img_sig.width = 150
+            img_sig.height = 75
+            ws.add_image(img_sig, f'W{totals_row+2}') # Внизу справа
+
+        if os.path.exists(stamp_path):
+            img_stamp = OpenpyxlImage(stamp_path)
+            img_stamp.width = 130
+            img_stamp.height = 130
+            ws.add_image(img_stamp, f'Q{totals_row+1}')
+    except Exception as e:
+        print(f"Error adding images to waybill: {e}")
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f'Накладная_№{invoice.number}_от_{date_str}.xlsx'
     return send_file(
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

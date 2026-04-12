@@ -189,7 +189,11 @@
             </a>
         </nav>
         <div class="sidebar-footer">
-            <a href="{{ url_for('new_invoice') }}" class="new-btn">+ Новый счёт</a>
+            <a href="{{ url_for('new_invoice') }}" class="new-btn" style="margin-bottom: 10px;">+ Новый счёт</a>
+            <form id="import-form" action="{{ url_for('import_excel') }}" method="POST" enctype="multipart/form-data" style="display: none;">
+                <input type="file" id="import-file" name="excel_files" accept=".xlsx" multiple onchange="document.getElementById('import-form').submit();">
+            </form>
+            <a href="#" onclick="document.getElementById('import-file').click(); return false;" class="new-btn" style="background: rgba(255,255,255,0.1); color: #fff;">📥 Импорт Excel</a>
         </div>
     </aside>
     <div class="sidebar-overlay" id="overlay" onclick="closeSidebar()"></div>

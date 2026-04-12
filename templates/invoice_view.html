@@ -5,6 +5,7 @@
 {% block topbar_actions %}
 <a href="{{ url_for('edit_invoice', id=invoice.id) }}" class="btn btn-outline btn-sm">✏️ Редактировать</a>
 <a href="{{ url_for('export_invoice', id=invoice.id) }}" class="btn btn-success btn-sm">📥 Excel</a>
+<a href="{{ url_for('export_waybill', id=invoice.id) }}" class="btn btn-warning btn-sm" style="background:#eab308;color:white;border:none;">📦 Накладная Z-2</a>
 <a href="{{ url_for('export_esf_xml', id=invoice.id) }}" class="btn btn-purple btn-sm">📄 XML ЭСФ</a>
 <a href="{{ url_for('send_to_esf', id=invoice.id) }}" class="btn btn-warning btn-sm" onclick="return confirm('Отправить ЭСФ?')">📤 Отправить ЭСФ</a>
 {% endblock %}
@@ -98,6 +99,7 @@
         <a href="{{ url_for('index') }}" class="btn btn-outline">← Все счета</a>
         <a href="{{ url_for('edit_invoice', id=invoice.id) }}" class="btn btn-primary">✏️ Редактировать</a>
         <a href="{{ url_for('export_invoice', id=invoice.id) }}" class="btn btn-success">📥 Скачать Excel</a>
+        <a href="{{ url_for('export_waybill', id=invoice.id) }}" class="btn btn-warning" style="background:#eab308;color:white;border:none;">📦 Скачать Накладную Z-2</a>
         <a href="{{ url_for('export_esf_xml', id=invoice.id) }}" class="btn btn-purple">📄 XML для ЭСФ</a>
         <a href="{{ url_for('delete_invoice', id=invoice.id) }}" class="btn btn-danger"
            onclick="return confirm('Удалить счёт №{{ invoice.number }}?')">🗑 Удалить</a>
