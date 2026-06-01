@@ -895,6 +895,130 @@ def export_waybill(id):
     )
 
 
+def _style_document_sheet(ws, max_col):
+    thin = Side(style='thin')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_fill = PatternFill(start_color='EDEDED', end_color='EDEDED', fill_type='solid')
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
+            if cell.row in (1, 2):
+                cell.font = Font(bold=True, size=12)
+    for col in range(1, max_col + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 16
+    ws.column_dimensions['A'].width = 6
+    ws.column_dimensions['B'].width = 44
+    for row in ws.iter_rows():
+        values = [c.value for c in row]
+        if values and values[0] in ('№', 'Итого'):
+            for cell in row:
+                cell.border = border
+                cell.fill = header_fill if values[0] == '№' else PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
+                cell.font = Font(bold=True)
+        elif row[0].row > 1 and any(v is not None for v in values):
+            for cell in row:
+                if cell.column <= max_col and row[0].value not in (None, ''):
+                    cell.border = border
+
+
+@app.route('/invoice/export_act/<int:id>')
+def export_act(id):
+    invoice = Invoice.query.get_or_404(id)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'АВР'
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+
+    date_str = invoice.date.strftime('%d.%m.%Y')
+    ws.merge_cells('A1:H1')
+    ws['A1'] = f'АКТ ВЫПОЛНЕННЫХ РАБОТ (ОКАЗАННЫХ УСЛУГ) № {invoice.number} от {date_str}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+    ws.append([])
+    ws.append(['Заказчик', f'{invoice.contractor.name} | {invoice.contractor.bin_iin} | {invoice.contractor.address}'])
+    ws.append(['Исполнитель', 'ИП "ГРАНД МЕБЕЛЬ" | ИИН 910226302322 | Казахстан, Аулиеагаш, микрорайон Мадениет, улица Тасболат, дом 34'])
+    ws.append(['Договор', invoice.contract_info or 'Без договора'])
+    ws.append([])
+    ws.append(['№', 'Наименование работ/услуг', 'Дата выполнения', 'Ед.', 'Кол-во', 'Цена', 'Стоимость', 'Примечание'])
+
+    total = 0
+    for idx, item in enumerate(invoice.items, 1):
+        amount = item.quantity * item.price
+        total += amount
+        ws.append([idx, item.product.name, date_str, item.product.unit, item.quantity, item.price, amount, ''])
+
+    ws.append(['Итого', '', '', '', '', '', total, ''])
+    ws.append([])
+    ws.append(['Всего к оплате прописью', f'{invoice.total_text().title()} тенге 00 тиын'])
+    ws.append([])
+    ws.append(['Сдал', 'ИП "ГРАНД МЕБЕЛЬ" __________________'])
+    ws.append(['Принял', f'{invoice.contractor.name} __________________'])
+
+    _style_document_sheet(ws, 8)
+    for col in ('F', 'G'):
+        for cell in ws[col]:
+            if isinstance(cell.value, (int, float)):
+                cell.number_format = '#,##0.00'
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f'АВР_№{invoice.number}_от_{date_str}.xlsx'
+    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                     as_attachment=True, download_name=filename)
+
+
+@app.route('/invoice/export_tax_invoice/<int:id>')
+def export_tax_invoice(id):
+    invoice = Invoice.query.get_or_404(id)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Счет-фактура'
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+
+    date_str = invoice.date.strftime('%d.%m.%Y')
+    ws.merge_cells('A1:K1')
+    ws['A1'] = f'СЧЕТ-ФАКТУРА № {invoice.number} от {date_str}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+    ws.append([])
+    ws.append(['Поставщик', 'ИП "ГРАНД МЕБЕЛЬ" | ИИН 910226302322 | ИИК KZ84722S000035000586 | АО «Kaspi Bank» | БИК CASPKZKA'])
+    ws.append(['Покупатель', f'{invoice.contractor.name} | {invoice.contractor.bin_iin} | {invoice.contractor.address}'])
+    ws.append(['Договор', invoice.contract_info or 'Без договора'])
+    ws.append(['Дата совершения оборота', date_str])
+    ws.append([])
+    ws.append(['№', 'Наименование', 'Ед.', 'Кол-во', 'Цена без НДС', 'Сумма без НДС', 'Ставка НДС', 'НДС', 'Акциз', 'Всего', 'Страна'])
+
+    total = 0
+    for idx, item in enumerate(invoice.items, 1):
+        amount = item.quantity * item.price
+        total += amount
+        ws.append([idx, item.product.name, item.product.unit, item.quantity, item.price, amount, 'Без НДС', 0, 0, amount, 'KZ'])
+
+    ws.append(['Итого', '', '', '', '', total, '', 0, 0, total, ''])
+    ws.append([])
+    ws.append(['Руководитель', 'ИП "ГРАНД МЕБЕЛЬ" __________________'])
+    ws.append(['Выписал', 'ИП "ГРАНД МЕБЕЛЬ" __________________'])
+    ws.append(['Главный бухгалтер', 'Не предусмотрен / __________________'])
+
+    _style_document_sheet(ws, 11)
+    for col in ('E', 'F', 'H', 'I', 'J'):
+        for cell in ws[col]:
+            if isinstance(cell.value, (int, float)):
+                cell.number_format = '#,##0.00'
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f'Счет-фактура_№{invoice.number}_от_{date_str}.xlsx'
+    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                     as_attachment=True, download_name=filename)
+
+
 # ─── Routes: ESF ───────────────────────────────────────────────────────────────
 
 @app.route('/esf/settings', methods=['GET', 'POST'])
@@ -928,10 +1052,8 @@ def esf_settings():
                            has_signature=has_signature)
 
 
-@app.route('/esf/export/<int:id>')
-def export_esf_xml(id):
+def build_esf_xml(invoice):
     from esf_client.esf_models import Invoice as ESFInvoice, InvoiceItem as ESFInvoiceItem, Participant
-    invoice = Invoice.query.get_or_404(id)
     seller = Participant(bin_iin='910226302322', name='ИП "ГРАНД МЕБЕЛЬ"',
                          address='Казахстан, Аулиеагаш, МИКРОРАЙОН МАДЕНИЕТ, УЛИЦА ТАСБОЛАТ, дом 34',
                          bank_account='KZ84722S000035000586', bank_name='АО «Kaspi Bank»', bik='CASPKZKA')
@@ -945,7 +1067,24 @@ def export_esf_xml(id):
     esf_invoice = ESFInvoice(invoice_number=f"ЭСФ-{invoice.number}", invoice_date=invoice.date,
                               seller=seller, buyer=buyer, shipment_date=invoice.date)
     esf_invoice.items = items
-    xml_content = esf_invoice.to_xml_string()
+    return esf_invoice.to_xml_string()
+
+
+@app.route('/esf/xml/<int:id>')
+def get_esf_xml(id):
+    invoice = Invoice.query.get_or_404(id)
+    return jsonify({
+        'invoice_number': invoice.number,
+        'date': invoice.date.strftime('%d.%m.%Y'),
+        'filename': f'ESF_{invoice.number}_{invoice.date.strftime("%d%m%Y")}.xml',
+        'xml': build_esf_xml(invoice)
+    })
+
+
+@app.route('/esf/export/<int:id>')
+def export_esf_xml(id):
+    invoice = Invoice.query.get_or_404(id)
+    xml_content = build_esf_xml(invoice)
     filename = f'ESF_{invoice.number}_{invoice.date.strftime("%d%m%Y")}.xml'
     return send_file(BytesIO(xml_content.encode('utf-8')), mimetype='application/xml',
                      as_attachment=True, download_name=filename)

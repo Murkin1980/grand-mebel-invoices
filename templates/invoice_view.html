@@ -5,8 +5,11 @@
 {% block topbar_actions %}
 <a href="{{ url_for('edit_invoice', id=invoice.id) }}" class="btn btn-outline btn-sm">✏️ Редактировать</a>
 <a href="{{ url_for('export_invoice', id=invoice.id) }}" class="btn btn-success btn-sm">📥 Excel</a>
+<a href="{{ url_for('export_act', id=invoice.id) }}" class="btn btn-success btn-sm">АВР</a>
+<a href="{{ url_for('export_tax_invoice', id=invoice.id) }}" class="btn btn-purple btn-sm">Счет-фактура</a>
 <a href="{{ url_for('export_waybill', id=invoice.id) }}" class="btn btn-warning btn-sm" style="background:#eab308;color:white;border:none;">📦 Накладная Z-2</a>
 <a href="{{ url_for('export_esf_xml', id=invoice.id) }}" class="btn btn-purple btn-sm">📄 XML ЭСФ</a>
+<button type="button" class="btn btn-purple btn-sm" onclick="signEsfXmlWithNcaLayer({{ invoice.id }})">Подписать NCALayer</button>
 <a href="{{ url_for('send_to_esf', id=invoice.id) }}" class="btn btn-warning btn-sm" onclick="return confirm('Отправить ЭСФ?')">📤 Отправить ЭСФ</a>
 {% endblock %}
 
@@ -99,10 +102,89 @@
         <a href="{{ url_for('index') }}" class="btn btn-outline">← Все счета</a>
         <a href="{{ url_for('edit_invoice', id=invoice.id) }}" class="btn btn-primary">✏️ Редактировать</a>
         <a href="{{ url_for('export_invoice', id=invoice.id) }}" class="btn btn-success">📥 Скачать Excel</a>
+        <a href="{{ url_for('export_act', id=invoice.id) }}" class="btn btn-success">Скачать АВР</a>
+        <a href="{{ url_for('export_tax_invoice', id=invoice.id) }}" class="btn btn-purple">Скачать счет-фактуру</a>
         <a href="{{ url_for('export_waybill', id=invoice.id) }}" class="btn btn-warning" style="background:#eab308;color:white;border:none;">📦 Скачать Накладную Z-2</a>
         <a href="{{ url_for('export_esf_xml', id=invoice.id) }}" class="btn btn-purple">📄 XML для ЭСФ</a>
+        <button type="button" class="btn btn-purple" onclick="signEsfXmlWithNcaLayer({{ invoice.id }})">Подписать XML через NCALayer</button>
         <a href="{{ url_for('delete_invoice', id=invoice.id) }}" class="btn btn-danger"
            onclick="return confirm('Удалить счёт №{{ invoice.number }}?')">🗑 Удалить</a>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function downloadTextFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType || 'application/xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
+function callNcaLayer(payload) {
+    return new Promise((resolve, reject) => {
+        const ws = new WebSocket('wss://127.0.0.1:13579/');
+        const timeout = setTimeout(() => {
+            try { ws.close(); } catch (e) {}
+            reject(new Error('NCALayer не ответил. Проверьте, что NCALayer запущен.'));
+        }, 120000);
+
+        ws.onopen = () => ws.send(JSON.stringify(payload));
+        ws.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error('Не удалось подключиться к NCALayer на 127.0.0.1:13579.'));
+        };
+        ws.onmessage = (event) => {
+            clearTimeout(timeout);
+            try {
+                const response = JSON.parse(event.data);
+                resolve(response);
+            } catch (e) {
+                reject(new Error('NCALayer вернул некорректный ответ.'));
+            } finally {
+                ws.close();
+            }
+        };
+    });
+}
+
+function extractNcaResult(response) {
+    if (!response) return '';
+    if (response.code && response.code !== '200') {
+        throw new Error(response.message || response.responseObject || 'NCALayer вернул ошибку.');
+    }
+    if (typeof response.responseObject === 'string') return response.responseObject;
+    if (response.responseObject && typeof response.responseObject === 'object') {
+        return response.responseObject.result || response.responseObject.xml || response.responseObject.data || '';
+    }
+    return response.result || response.xml || response.data || '';
+}
+
+async function signEsfXmlWithNcaLayer(invoiceId) {
+    try {
+        const xmlResponse = await fetch(`/esf/xml/${invoiceId}`);
+        if (!xmlResponse.ok) throw new Error('Не удалось получить XML ЭСФ.');
+        const payload = await xmlResponse.json();
+
+        const ncaResponse = await callNcaLayer({
+            module: 'kz.gov.pki.knca.commonUtils',
+            method: 'signXml',
+            args: ['PKCS12', 'SIGNATURE', payload.xml, '', '']
+        });
+
+        const signedXml = extractNcaResult(ncaResponse);
+        if (!signedXml) throw new Error('Подписанный XML не получен.');
+        downloadTextFile(`SIGNED_${payload.filename}`, signedXml, 'application/xml;charset=utf-8');
+        alert('XML подписан через NCALayer и скачан на компьютер.');
+    } catch (error) {
+        alert(error.message || error);
+    }
+}
+</script>
 {% endblock %}
